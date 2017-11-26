@@ -136,6 +136,8 @@ static const u32 queried_ctrls[] = {
     V4L2_CID_BLUE_BALANCE,
     V4L2_CID_GAMMA,
     V4L2_CID_EXPOSURE,
+    V4L2_CID_EXPOSURE_ABSOLUTE,
+    V4L2_CID_EXPOSURE_AUTO,
     V4L2_CID_AUTOGAIN,
     V4L2_CID_GAIN,
 
@@ -775,8 +777,8 @@ static void v4l2_picture_controls(struct context *cnt, struct video_dev *viddev)
 
     if (cnt->conf.autobright) {
         if (vid_do_autobright(cnt, viddev)) {
-            if (v4l2_set_control(vid_source, V4L2_CID_BRIGHTNESS, viddev->brightness))
-                v4l2_set_control(vid_source, V4L2_CID_GAIN, viddev->brightness);
+            v4l2_set_control(vid_source, V4L2_CID_EXPOSURE_AUTO, V4L2_EXPOSURE_MANUAL);
+            v4l2_set_control(vid_source, V4L2_CID_EXPOSURE_ABSOLUTE, 255 - viddev->brightness);
         }
     } else {
         if (cnt->conf.brightness && cnt->conf.brightness != viddev->brightness) {
