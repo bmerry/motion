@@ -452,9 +452,9 @@ static int v4l2_autobright(struct context *cnt, struct video_dev *curdev, int me
             }
         } else if ((method == 3) &&
             (devitem->ctrl_id == V4L2_CID_EXPOSURE_ABSOLUTE)) {
-            device_value = devitem->ctrl_currval;
             parm_max = devitem->ctrl_maximum;
             parm_min = devitem->ctrl_minimum;
+            device_value = (parm_max - parm_min) - devitem->ctrl_currval;
             if (target == -1){
                 target = (int) ((devitem->ctrl_maximum - devitem->ctrl_minimum)/2);
             }
@@ -516,7 +516,7 @@ static int v4l2_autobright(struct context *cnt, struct video_dev *curdev, int me
                 devitem->ctrl_newval = device_value;
             } else if ((method == 3) &&
                 (devitem->ctrl_id == V4L2_CID_EXPOSURE_ABSOLUTE)) {
-                devitem->ctrl_newval = device_value;
+                devitem->ctrl_newval = (parm_max - parm_min) - device_value;
             }
         }
     }
