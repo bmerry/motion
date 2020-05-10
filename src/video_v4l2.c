@@ -404,7 +404,7 @@ static int v4l2_autobright(struct context *cnt, struct video_dev *curdev, int me
 
     /* Set the values for the control variables */
     parm_hysteresis = 20;
-    parm_damper = 20;
+    parm_damper = 40;
     parm_max = 255;
     parm_min = 0;
 
