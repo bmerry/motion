@@ -454,7 +454,7 @@ static int v4l2_autobright(struct context *cnt, struct video_dev *curdev, int me
             (devitem->ctrl_id == V4L2_CID_EXPOSURE_ABSOLUTE)) {
             parm_max = devitem->ctrl_maximum;
             parm_min = devitem->ctrl_minimum;
-            device_value = (parm_max - parm_min) - devitem->ctrl_currval;
+            device_value = parm_max - devitem->ctrl_currval + parm_min;
             if (target == -1){
                 target = (int) ((devitem->ctrl_maximum - devitem->ctrl_minimum)/2);
             }
@@ -484,24 +484,14 @@ static int v4l2_autobright(struct context *cnt, struct video_dev *curdev, int me
     /* Average is above window - turn down exposure - go for the target. */
     if (avg > window_high) {
         step = MIN2((avg - target) / parm_damper + 1, device_value - parm_min);
-        if (device_value > step + 1 - parm_min) {
-            device_value -= step;
-            make_change = TRUE;
-        } else {
-            device_value = parm_min;
-            make_change = TRUE;
-        }
+	device_value -= step;
+	make_change = TRUE;
         //MOTION_LOG(INF, TYPE_VIDEO, NO_ERRNO, "Down Avg %d step: %d device:%d",avg,step,device_value);
     } else if (avg < window_low) {
         /* Average is below window - turn up exposure - go for the target. */
         step = MIN2((target - avg) / parm_damper + 1, parm_max - device_value);
-        if (device_value < parm_max - step) {
-            device_value += step;
-            make_change = TRUE;
-        } else {
-            device_value = parm_max;
-            make_change = TRUE;
-        }
+        device_value += step;
+        make_change = TRUE;
         //MOTION_LOG(INF, TYPE_VIDEO, NO_ERRNO, "Up Avg %d step: %d device:%d",avg,step,device_value);
     }
 
@@ -516,7 +506,7 @@ static int v4l2_autobright(struct context *cnt, struct video_dev *curdev, int me
                 devitem->ctrl_newval = device_value;
             } else if ((method == 3) &&
                 (devitem->ctrl_id == V4L2_CID_EXPOSURE_ABSOLUTE)) {
-                devitem->ctrl_newval = (parm_max - parm_min) - device_value;
+                devitem->ctrl_newval = parm_max - device_value + parm_min;
             }
         }
     }
