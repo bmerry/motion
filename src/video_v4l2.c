@@ -403,7 +403,7 @@ static int v4l2_autobright(struct context *cnt, struct video_dev *curdev, int me
     if ((method == 0) || (method > 3)) return 0;
 
     /* Set the values for the control variables */
-    parm_hysteresis = 20;
+    parm_hysteresis = 50;
     parm_damper = 40;
     parm_max = 255;
     parm_min = 0;
