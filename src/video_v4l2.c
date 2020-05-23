@@ -458,6 +458,7 @@ static int v4l2_autobright(struct context *cnt, struct video_dev *curdev, int me
             if (target == -1){
                 target = (int) ((devitem->ctrl_maximum - devitem->ctrl_minimum)/2);
             }
+	    devitem->ctrl_newval = devitem->ctrl_currval;
         }
     }
     /* If we can not find control just give up */
