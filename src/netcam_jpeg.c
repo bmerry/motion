@@ -1,3 +1,19 @@
+/*   This file is part of Motion.
+ *
+ *   Motion is free software: you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 2 of the License, or
+ *   (at your option) any later version.
+ *
+ *   Motion is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with Motion.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 /*
  *    netcam_jpeg.c
  *
@@ -9,10 +25,14 @@
  *    Christopher Price.
  *
  *    Copyright 2005, William M. Brack
- *    This program is published under the GNU Public license
  */
+#include "motion.h"
 #include "translate.h"
-#include "rotate.h"    /* already includes motion.h */
+#include "util.h"
+#include "logger.h"
+#include "rotate.h"
+#include "netcam.h"
+#include "netcam_jpeg.h"
 
 /* This is a workaround regarding these defines.  The config.h file defines
  * HAVE_STDLIB_H as 1 whereas the jpeglib.h just defines it without a value.
@@ -122,8 +142,9 @@ static void netcam_skip_input_data(j_decompress_ptr cinfo, long num_bytes)
     }
 }
 
-static void netcam_term_source(j_decompress_ptr cinfo ATTRIBUTE_UNUSED)
+static void netcam_term_source(j_decompress_ptr cinfo)
 {
+    (void)cinfo;
 }
 
 /**
@@ -144,11 +165,12 @@ static void netcam_memory_src(j_decompress_ptr cinfo, char *data, int length)
 {
     netcam_src_ptr src;
 
-    if (cinfo->src == NULL)
+    if (cinfo->src == NULL) {
         cinfo->src = (struct jpeg_source_mgr *)
                      (*cinfo->mem->alloc_small)
                      ((j_common_ptr) cinfo, JPOOL_PERMANENT,
                       sizeof (netcam_source_mgr));
+    }
 
 
     src = (netcam_src_ptr)cinfo->src;
@@ -228,8 +250,9 @@ static void netcam_output_message(j_common_ptr cinfo)
      * care about.
      */
     if ((cinfo->err->msg_code != JWRN_EXTRANEOUS_DATA) &&
-        (cinfo->err->msg_code == JWRN_NOT_SEQUENTIAL) && (!netcam->netcam_tolerant_check))
+        (cinfo->err->msg_code == JWRN_NOT_SEQUENTIAL) && (!netcam->netcam_tolerant_check)) {
         netcam->jpeg_error |= 2;    /* Set flag to show problem */
+    }
 
     /*
      * Format the message according to library standards.
@@ -294,10 +317,6 @@ static int netcam_init_jpeg(netcam_context_ptr netcam, j_decompress_ptr cinfo)
 
         if (retcode) {    /* We assume a non-zero reply is ETIMEOUT */
             pthread_mutex_unlock(&netcam->mutex);
-
-            MOTION_LOG(WRN, TYPE_NETCAM, NO_ERRNO
-                ,_("no new pic, no signal rcvd"));
-
             return NETCAM_GENERAL_ERROR | NETCAM_NOTHING_NEW_ERROR;
         }
 
@@ -335,13 +354,16 @@ static int netcam_init_jpeg(netcam_context_ptr netcam, j_decompress_ptr cinfo)
     jpeg_read_header(cinfo, TRUE);
 
     /* Override the desired colour space. */
-    cinfo->out_color_space = JCS_YCbCr;
+    if (cinfo->out_color_space != JCS_GRAYSCALE) {
+        cinfo->out_color_space = JCS_YCbCr;
+    }
 
     /* Start the decompressor. */
     jpeg_start_decompress(cinfo);
 
-    if (netcam->jpeg_error)
+    if (netcam->jpeg_error) {
         MOTION_LOG(DBG, TYPE_NETCAM, NO_ERRNO,_("jpeg_error %d"), netcam->jpeg_error);
+    }
 
     return netcam->jpeg_error;
 }
@@ -356,9 +378,8 @@ static int netcam_init_jpeg(netcam_context_ptr netcam, j_decompress_ptr cinfo)
  *
  * Returns :  netcam->jpeg_error
  */
-static int netcam_image_conv(netcam_context_ptr netcam,
-                               struct jpeg_decompress_struct *cinfo,
-                                struct image_data *img_data)
+static int netcam_image_conv(netcam_context_ptr netcam, struct jpeg_decompress_struct *cinfo
+            , struct image_data *img_data)
 {
     JSAMPARRAY      line;           /* Array of decomp data lines */
     unsigned char  *wline;          /* Will point to line[0] */
@@ -398,19 +419,29 @@ static int netcam_image_conv(netcam_context_ptr netcam,
     while (cinfo->output_scanline < height) {
         jpeg_read_scanlines(cinfo, line, 1);
 
-        for (i = 0; i < linesize; i += 3) {
-            pic[i / 3] = wline[i];
-            if (i & 1) {
-                upic[(i / 3) / 2] = wline[i + 1];
-                vpic[(i / 3) / 2] = wline[i + 2];
+        if (cinfo->out_color_space == JCS_GRAYSCALE) {
+
+            for (i = 0; i < (int)cinfo->output_width; i++) {
+                pic[i] = wline[i];
             }
-        }
+            pic += cinfo->output_width;
 
-        pic += linesize / 3;
+        } else {
 
-        if (y++ & 1) {
-            upic += width / 2;
-            vpic += width / 2;
+            for (i = 0; i < linesize; i += 3) {
+                pic[i / 3] = wline[i];
+                if (i & 1) {
+                    upic[(i / 3) / 2] = wline[i + 1];
+                    vpic[(i / 3) / 2] = wline[i + 2];
+                }
+            }
+
+            pic += linesize / 3;
+
+            if (y++ & 1) {
+                upic += width / 2;
+                vpic += width / 2;
+            }
         }
     }
 
@@ -419,8 +450,9 @@ static int netcam_image_conv(netcam_context_ptr netcam,
 
     rotate_map(netcam->cnt, img_data);
 
-    if (netcam->jpeg_error)
+    if (netcam->jpeg_error) {
         MOTION_LOG(DBG, TYPE_NETCAM, NO_ERRNO,_("jpeg_error %d"), netcam->jpeg_error);
+    }
 
     return netcam->jpeg_error;
 }
@@ -458,9 +490,7 @@ int netcam_proc_jpeg(netcam_context_ptr netcam,  struct image_data *img_data)
         ,_("processing jpeg image - content length %d"), netcam->latest->content_length);
 
     ret = netcam_init_jpeg(netcam, &cinfo);
-
     if (ret != 0) {
-        MOTION_LOG(INF, TYPE_NETCAM, NO_ERRNO,_("return code %d"), ret);
         return ret;
     }
 
@@ -529,7 +559,6 @@ void netcam_fix_jpeg_header(netcam_context_ptr netcam)
         //               __FUNCTION__, soi_position);
     }
 }
-
 
 /**
  * netcam_get_dimensions

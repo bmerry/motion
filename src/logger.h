@@ -1,14 +1,26 @@
-/*
- *      logger.h
+/*   This file is part of Motion.
  *
- *      Include file for logger.c
+ *   Motion is free software: you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 2 of the License, or
+ *   (at your option) any later version.
  *
- *      Copyright 2005, William M. Brack
- *      Copyright 2008 by Angel Carpintero  (motiondevelop@gmail.com)
- *      This software is distributed under the GNU Public License Version 2
- *      See also the file 'COPYING'.
+ *   Motion is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
  *
+ *   You should have received a copy of the GNU General Public License
+ *   along with Motion.  If not, see <https://www.gnu.org/licenses/>.
  */
+
+/*
+ *  logger.h
+ *    Headers associated with functions in the logger.c module.
+ *    Copyright 2005, William M. Brack
+ *    Copyright 2008 by Angel Carpintero  (motiondevelop@gmail.com)
+ */
+
 #ifndef _INCLUDE_LOGGER_H_
 #define _INCLUDE_LOGGER_H_
 

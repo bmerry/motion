@@ -43,34 +43,44 @@ LIBS="$LIBS -pthread "
 ##############################################################################
 ###  Check JPG - Required.  Needed for image processing
 ##############################################################################
+AS_IF([pkg-config libjpeg ], [
+    TEMP_CFLAGS="$TEMP_CFLAGS "`pkg-config --cflags libjpeg`
+    TEMP_LIBS="$TEMP_LIBS "`pkg-config --libs libjpeg`
+  ],[
+    TEMP_LIBS="$TEMP_LIBS -ljpeg"
+  ]
+)
+HOLD_CFLAGS="$CFLAGS"
+CFLAGS="$CFLAGS $TEMP_CFLAGS"
 AC_CHECK_HEADERS(setjmp.h jerror.h jpeglib.h,[JPGS="yes"],[JPGS="no"])
 AC_MSG_CHECKING(jpg libraries)
 AC_MSG_RESULT($JPGS)
-AS_IF([test "${JPGS}" = "yes" ], [
-    AS_IF([pkg-config libjpeg ], [
-        TEMP_CFLAGS="$TEMP_CFLAGS "`pkg-config --cflags libjpeg`
-        TEMP_LIBS="$TEMP_LIBS "`pkg-config --libs libjpeg`
-      ],[
-        TEMP_LIBS="$TEMP_LIBS -ljpeg"
-      ]
-    )
-  ],[
-    AC_MSG_ERROR([Required package libjpeg-dev not found, please check motion_guide.html and install necessary dependencies])
+AS_IF([test "${JPGS}" != "yes" ], [
+    AC_MSG_ERROR([Required jpeg headers not found, please check motion_guide.html and install necessary dependencies])
   ]
 )
+CFLAGS="$HOLD_CFLAGS"
+
 ##############################################################################
 ###  Check libmicrohttpd - Required.  Needed for stream/webcontrol
 ##############################################################################
-AC_CHECK_HEADERS(microhttpd.h,[MHTTP="yes"],[MHTTP="no"])
-AC_MSG_CHECKING(libmicrohttpd libraries)
-AC_MSG_RESULT($MHTTP)
-AS_IF([test "${MHTTP}" = "yes" ], [
+AS_IF([pkg-config libmicrohttpd ], [
     TEMP_CFLAGS="$TEMP_CFLAGS "`pkg-config --cflags libmicrohttpd`
     TEMP_LIBS="$TEMP_LIBS "`pkg-config --libs libmicrohttpd`
   ],[
     AC_MSG_ERROR([Required package libmicrohttpd-dev not found, please check motion_guide.html and install necessary dependencies])
   ]
 )
+HOLD_CFLAGS="$CFLAGS"
+CFLAGS="$CFLAGS $TEMP_CFLAGS"
+AC_CHECK_HEADERS(microhttpd.h,[MHTTP="yes"],[MHTTP="no"])
+AC_MSG_CHECKING(libmicrohttpd libraries)
+AC_MSG_RESULT($MHTTP)
+AS_IF([test "${MHTTP}" != "yes" ], [
+    AC_MSG_ERROR([Required package libmicrohttpd-dev not found, please check motion_guide.html and install necessary dependencies])
+  ]
+)
+CFLAGS="$HOLD_CFLAGS"
 
 ##############################################################################
 ###  Check setting/getting thread names
@@ -215,19 +225,22 @@ AS_IF([test "${MMAL}" = "no"], [
     export PKG_CONFIG_PATH
     AC_MSG_RESULT($PKG_CONFIG_PATH)
 
-    AC_MSG_CHECKING(for MMAL)
     AS_IF([pkg-config mmal], [
+      AC_CHECK_HEADERS(interface/vcos/vcos.h interface/mmal/mmal.h,,[MMAL="no"])
+      AC_MSG_CHECKING(for MMAL)
+      AS_IF([test "${MMAL}" = "no"], [
+        AC_MSG_RESULT([no])
+      ],[
         TEMP_CFLAGS="$TEMP_CFLAGS -Irasppicam "`pkg-config --cflags mmal`
-        TEMP_LIBS="$TEMP_LIBS "`pkg-config --libs mmal`
-        #pkg config parm does not provide -lvchostif that buildroot requires
-        TEMP_LIBS="$TEMP_LIBS -lvchostif "
+        TEMP_LIBS="$TEMP_LIBS "`pkg-config --libs mmal`" -lvchostif "
         AC_MSG_RESULT([yes])
         AC_DEFINE([HAVE_MMAL], [1], [Define to 1 if MMAL is around])
-      ],[
-        AC_MSG_RESULT([no])
-        MMAL="no"
-      ]
-    )
+      ])
+    ],[
+      AC_MSG_CHECKING(for MMAL)
+      AC_MSG_RESULT([no])
+      MMAL="no"
+    ])
     PKG_CONFIG_PATH=$TEMP_PATH
     export PKG_CONFIG_PATH
   ]
@@ -300,14 +313,24 @@ AS_IF([test "${MARIADB}" = "no"], [
     AC_MSG_RESULT($PKG_CONFIG_PATH)
 
     AC_MSG_CHECKING(for MariaDB)
-    AS_IF([pkg-config mariadb], [
-        TEMP_CFLAGS="$TEMP_CFLAGS "`pkg-config --cflags mariadb`
-        TEMP_LIBS="$TEMP_LIBS "`pkg-config --libs mariadb`
+    AS_IF([pkg-config libmariadb], [
+        TEMP_CFLAGS="$TEMP_CFLAGS "`pkg-config --cflags libmariadb`
+        TEMP_LIBS="$TEMP_LIBS "`pkg-config --libs libmariadb`
         AC_DEFINE([HAVE_MARIADB], [1], [Define to 1 if you have MariaDB support])
       ],[
         MARIADB="no"
       ]
     )
+    # Check for the old pkg name for MariaDB
+    AS_IF([test "${MARIADB}" = "no"], [
+      AS_IF([pkg-config mariadb], [
+        TEMP_CFLAGS="$TEMP_CFLAGS "`pkg-config --cflags mariadb`
+        TEMP_LIBS="$TEMP_LIBS "`pkg-config --libs mariadb`
+        MARIADB="yes"
+        AC_DEFINE([HAVE_MARIADB], [1], [Define to 1 if you have MariaDB support])
+      ])
+    ])
+
     AC_MSG_RESULT([$MARIADB])
     PKG_CONFIG_PATH=$TEMP_PATH
     export PKG_CONFIG_PATH

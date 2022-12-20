@@ -20,7 +20,6 @@ doc_DATA = \
 	doc/outputnormal1.jpg \
 	doc/motion_guide.html \
 	doc/motion_stylesheet.css \
-	doc/COPYING \
 	doc/CREDITS \
 	doc/motion_build.html \
 	doc/motion_config.html
@@ -46,7 +45,7 @@ cleanall: distclean
 all-local:
 	@rm -f po/*.po\~
 
-check:
+maintainer-check:
 	./configure --with-prototype-flags                   && $(MAKE) clean && $(MAKE)
 	./configure --with-prototype-flags --without-mariadb && $(MAKE) clean && $(MAKE)
 	./configure --with-prototype-flags --without-ffmpeg  && $(MAKE) clean && $(MAKE)
