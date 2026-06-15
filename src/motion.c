@@ -383,27 +383,23 @@ static void sig_handler(int signo)
          * movie and end up!
          */
 
+        MOTION_LOG(NTC, TYPE_ALL, NO_ERRNO, _("Received signal %d."), signo);
+
         if (cnt_list) {
             i = -1;
             while (cnt_list[++i]) {
                 cnt_list[i]->webcontrol_finish = TRUE;
                 cnt_list[i]->event_stop = TRUE;
-                cnt_list[i]->finish = 1;
-                /*
-                 * Don't restart thread when it ends,
-                 * all threads restarts if global restart is set
-                 */
-                 cnt_list[i]->restart = 0;
+                cnt_list[i]->finish = TRUE;
+                cnt_list[i]->restart = FALSE;
             }
         }
         /*
          * Set flag we want to quit main check threads loop
          * if restart is set (above) we start up again
          */
-        finish = 1;
+        finish = TRUE;
         break;
-    case SIGSEGV:
-        exit(0);
     case SIGVTALRM:
         printf("SIGVTALRM went off\n");
         break;
@@ -514,6 +510,7 @@ static void motion_detected(struct context *cnt, int dev, struct image_data *img
     struct config *conf = &cnt->conf;
     struct images *imgs = &cnt->imgs;
     struct coord *location = &img->location;
+    struct tm event_tm;
     int indx;
 
     /* Draw location */
@@ -552,10 +549,10 @@ static void motion_detected(struct context *cnt, int dev, struct image_data *img
              * in both time_t and struct tm format.
              */
             cnt->prev_event = cnt->event_nr;
-            cnt->eventtime = img->timestamp_tv.tv_sec;
-            localtime_r(&cnt->eventtime, cnt->eventtime_tm);
+            cnt->event_tv = img->timestamp_tv;
+            localtime_r(&cnt->event_tv.tv_sec, &event_tm);
             sprintf(cnt->eventid,"%05d",cnt->camera_id);
-            strftime(cnt->eventid+5, 15,"%Y%m%d%H%M%S", cnt->eventtime_tm);
+            strftime(cnt->eventid+5, 15,"%Y%m%d%H%M%S", &event_tm);
             /*
              * Since this is a new event we create the event_text_string used for
              * the %C conversion specifier. We may already need it for
@@ -776,13 +773,6 @@ static int init_camera_type(struct context *cnt)
 
     cnt->camera_type = CAMERA_TYPE_UNKNOWN;
 
-    #ifdef HAVE_MMAL
-        if (cnt->conf.mmalcam_name) {
-            cnt->camera_type = CAMERA_TYPE_MMAL;
-            return 0;
-        }
-    #endif // HAVE_MMAL
-
     if (cnt->conf.netcam_url) {
         if ((strncmp(cnt->conf.netcam_url,"mjpeg",5) == 0) ||
             (strncmp(cnt->conf.netcam_url,"ftp" ,3) == 0) ||
@@ -811,7 +801,7 @@ static int init_camera_type(struct context *cnt)
 
 
     MOTION_LOG(ERR, TYPE_ALL, NO_ERRNO
-        , _("Unable to determine camera type (MMAL, Netcam, V4L2, BKTR)"));
+        , _("Unable to determine camera type (Netcam, V4L2, BKTR)"));
     return -1;
 
 }
@@ -1047,11 +1037,7 @@ static int motion_init(struct context *cnt)
     /* Store thread number in TLS. */
     pthread_setspecific(tls_key_threadnr, (void *)((unsigned long)cnt->threadnr));
 
-    cnt->currenttime_tm = mymalloc(sizeof(struct tm));
-    cnt->eventtime_tm = mymalloc(sizeof(struct tm));
-    /* Init frame time */
-    cnt->currenttime = time(NULL);
-    localtime_r(&cnt->currenttime, cnt->currenttime_tm);
+    gettimeofday(&cnt->current_tv, NULL);
 
     cnt->smartmask_speed = 0;
 
@@ -1394,7 +1380,15 @@ static int motion_init(struct context *cnt)
     cnt->timenow = 0;
     cnt->timebefore = 0;
     cnt->rate_limit = 0;
-    cnt->lastframetime = 0;
+
+    cnt->last_tv.tv_sec = 0;
+    cnt->last_tv.tv_usec = 0;
+    cnt->lastframe_tv = cnt->last_tv;
+    cnt->event_tv = cnt->last_tv;
+    cnt->movie_tv = cnt->last_tv;
+    cnt->lostconnection_tv = cnt->last_tv;
+    cnt->lastframe_tv = cnt->last_tv;
+
     cnt->minimum_frame_time_downcounter = cnt->conf.minimum_frame_time;
     cnt->get_image = 1;
 
@@ -1546,14 +1540,6 @@ static void motion_cleanup(struct context *cnt)
         free(cnt->rolling_average_data);
         cnt->rolling_average_data = NULL;
     }
-
-    /* Cleanup the current time structure */
-    free(cnt->currenttime_tm);
-    cnt->currenttime_tm = NULL;
-
-    /* Cleanup the event time structure */
-    free(cnt->eventtime_tm);
-    cnt->eventtime_tm = NULL;
 
     dbse_deinit(cnt);
 
@@ -1726,23 +1712,17 @@ static void mlp_prepare(struct context *cnt)
     }
 
     /* Get time for current frame */
-    cnt->currenttime = time(NULL);
-
-    /*
-     * localtime returns static data and is not threadsafe
-     * so we use localtime_r which is reentrant and threadsafe
-     */
-    localtime_r(&cnt->currenttime, cnt->currenttime_tm);
+    gettimeofday(&cnt->current_tv, NULL);
 
     /*
      * If we have started on a new second we reset the shots variable
      * lastrate is updated to be the number of the last frame. last rate
      * is used as the ffmpeg framerate when motion is detected.
      */
-    if (cnt->lastframetime != cnt->currenttime) {
+    if (cnt->lastframe_tv.tv_sec != cnt->current_tv.tv_sec) {
         cnt->lastrate = cnt->shots + 1;
         cnt->shots = -1;
-        cnt->lastframetime = cnt->currenttime;
+        cnt->lastframe_tv = cnt->current_tv;
 
         if (cnt->conf.minimum_frame_time) {
             cnt->minimum_frame_time_downcounter--;
@@ -1762,6 +1742,12 @@ static void mlp_prepare(struct context *cnt)
         cnt->startup_frames--;
     }
 
+    /* Restart to avoid overflow */
+    if (cnt->event_nr > 2000000000) {
+        cnt->restart = TRUE;
+        cnt->event_stop = TRUE;
+        cnt->finish = TRUE;
+    }
 
 }
 
@@ -1815,7 +1801,7 @@ static void mlp_resetimages(struct context *cnt)
     }
 
     /* Store time with pre_captured image */
-    gettimeofday(&cnt->current_image->timestamp_tv, NULL);
+    cnt->current_image->timestamp_tv = cnt->current_tv;
 
     /* Store shot number with pre_captured image */
     cnt->current_image->shot = cnt->shots;
@@ -1826,7 +1812,7 @@ static int mlp_retry(struct context *cnt)
 {
     int size_high, height, width;
 
-    if (cnt->video_dev < 0 && cnt->currenttime % 10 == 0 && cnt->shots == 0) {
+    if (cnt->video_dev < 0 && cnt->current_tv.tv_sec % 10 == 0 && cnt->shots == 0) {
         MOTION_LOG(WRN, TYPE_ALL, NO_ERRNO
             ,_("Retrying until successful connection with camera"));
 
@@ -1904,7 +1890,8 @@ static int mlp_capture(struct context *cnt)
     // VALID PICTURE
     if (vid_return_code == 0) {
         cnt->lost_connection = 0;
-        cnt->connectionlosttime = 0;
+        cnt->lostconnection_tv.tv_sec = 0;
+        cnt->lostconnection_tv.tv_usec = 0;
 
         /* If all is well reset missing_frame_counter */
         if (cnt->missing_frame_counter >= MISSING_FRAMES_TIMEOUT * cnt->conf.framerate) {
@@ -1982,8 +1969,8 @@ static int mlp_capture(struct context *cnt)
          * First missed frame - store timestamp
          * Don't reset time when thread restarts
          */
-        if (cnt->connectionlosttime == 0) {
-            cnt->connectionlosttime = cnt->currenttime;
+        if (cnt->lostconnection_tv.tv_sec == 0) {
+            cnt->lostconnection_tv = cnt->current_tv;
         }
 
 
@@ -2008,10 +1995,9 @@ static int mlp_capture(struct context *cnt)
                 tmpin = "UNABLE TO OPEN VIDEO DEVICE\\nSINCE %Y-%m-%d %T";
             }
 
-            tv1.tv_sec=cnt->connectionlosttime;
-            tv1.tv_usec = 0;
             memset(cnt->current_image->image_norm, 0x80, cnt->imgs.size_norm);
-            mystrftime(cnt, tmpout, sizeof(tmpout), tmpin, &tv1, NULL, 0);
+            mystrftime(cnt, tmpout, sizeof(tmpout), tmpin
+                , &cnt->lostconnection_tv, NULL, 0);
             draw_text(cnt->current_image->image_norm, cnt->imgs.width, cnt->imgs.height,
                       10, 20 * cnt->text_scale, tmpout, cnt->text_scale);
 
@@ -2020,7 +2006,8 @@ static int mlp_capture(struct context *cnt)
                 MOTION_LOG(NTC, TYPE_ALL, NO_ERRNO
                     ,_("Video signal lost - Adding grey image"));
                 // Event for lost video signal can be called from here
-                event(cnt, EVENT_CAMERA_LOST, NULL, NULL, NULL, &tv1);
+                event(cnt, EVENT_CAMERA_LOST, NULL, NULL, NULL
+                    , &cnt->lostconnection_tv);
             }
 
             /*
@@ -2433,7 +2420,7 @@ static void mlp_actions(struct context *cnt)
 
     /* Update last frame saved time, so we can end event after gap time */
     if (cnt->current_image->flags & IMAGE_SAVE) {
-        cnt->lasttime = cnt->current_image->timestamp_tv.tv_sec;
+        cnt->last_tv = cnt->current_image->timestamp_tv;
     }
 
     mlp_areadetect(cnt);
@@ -2442,7 +2429,7 @@ static void mlp_actions(struct context *cnt)
 
     /* Check event gap */
     if ((cnt->conf.event_gap > 0) &&
-        ((cnt->currenttime - cnt->lasttime) >= cnt->conf.event_gap )) {
+        ((cnt->current_tv.tv_sec - cnt->last_tv.tv_sec) >= cnt->conf.event_gap )) {
         cnt->event_stop = TRUE;
     }
     /* Note that event_stop can be set elsewhere in code as well */
@@ -2485,7 +2472,7 @@ static void mlp_actions(struct context *cnt)
      */
     if ((cnt->conf.movie_max_time > 0) &&
         (cnt->event_nr == cnt->prev_event) &&
-        (cnt->current_image->timestamp_tv.tv_sec - cnt->movietime >= cnt->conf.movie_max_time) &&
+        (cnt->current_image->timestamp_tv.tv_sec - cnt->movie_tv.tv_sec >= cnt->conf.movie_max_time) &&
         ( !(cnt->current_image->flags & IMAGE_POSTCAP)) &&
         ( !(cnt->current_image->flags & IMAGE_PRECAP))) {
         event(cnt, EVENT_MOVIE_END, NULL, NULL, NULL, &cnt->current_image->timestamp_tv);
@@ -2544,7 +2531,7 @@ static void mlp_snapshot(struct context *cnt)
      */
 
     /* time_current_frame is used both for snapshot and timelapse features */
-    cnt->time_current_frame = cnt->currenttime;
+    cnt->time_current_frame = cnt->current_tv.tv_sec;
 
     if ((cnt->conf.snapshot_interval > 0 && cnt->shots == 0 &&
          cnt->time_current_frame % cnt->conf.snapshot_interval <= cnt->time_last_frame % cnt->conf.snapshot_interval) ||
@@ -2728,17 +2715,6 @@ static void mlp_parmsupdate(struct context *cnt)
 
     dbse_sqlmask_update(cnt);
 
-    cnt->threshold = cnt->conf.threshold;
-    if (cnt->conf.threshold_maximum > cnt->conf.threshold ) {
-        cnt->threshold_maximum = cnt->conf.threshold_maximum;
-    } else {
-        cnt->threshold_maximum = (cnt->imgs.height * cnt->imgs.width * 3) / 2;
-    }
-
-    if (!cnt->conf.noise_tune) {
-        cnt->noise = cnt->conf.noise_level;
-    }
-
 }
 
 static void mlp_frametiming(struct context *cnt)
@@ -2843,7 +2819,7 @@ static void *motion_loop(void *arg)
         }
     }
 
-    cnt->lost_connection = 1;
+    cnt->lost_connection = TRUE;
     MOTION_LOG(NTC, TYPE_ALL, NO_ERRNO, _("Thread exiting"));
 
     motion_cleanup(cnt);
@@ -2852,8 +2828,8 @@ static void *motion_loop(void *arg)
         threads_running--;
     pthread_mutex_unlock(&global_lock);
 
-    cnt->running = 0;
-    cnt->finish = 0;
+    cnt->running = FALSE;
+    cnt->finish = FALSE;
 
     pthread_exit(NULL);
 }
@@ -3068,12 +3044,6 @@ static void motion_ntc(void)
         MOTION_LOG(DBG, TYPE_ALL, NO_ERRNO,_("webp   : available"));
     #else
         MOTION_LOG(DBG, TYPE_ALL, NO_ERRNO,_("webp   : not available"));
-    #endif
-
-    #ifdef HAVE_MMAL
-        MOTION_LOG(DBG, TYPE_ALL, NO_ERRNO,_("mmal   : available"));
-    #else
-        MOTION_LOG(DBG, TYPE_ALL, NO_ERRNO,_("mmal   : not available"));
     #endif
 
     #ifdef HAVE_FFMPEG
@@ -3298,11 +3268,10 @@ static void motion_start_thread(struct context *cnt)
      * 'threads_running'.
      */
     pthread_mutex_lock(&global_lock);
-    threads_running++;
+        threads_running++;
     pthread_mutex_unlock(&global_lock);
 
-    /* Set a flag that we want this thread running */
-    cnt->restart = 1;
+    cnt->restart = TRUE;
 
     /* Give the thread watchdog to start */
     cnt->watchdog = cnt->conf.watchdog_tmo;
@@ -3310,14 +3279,14 @@ static void motion_start_thread(struct context *cnt)
     /* Flag it as running outside of the thread, otherwise if the main loop
      * checked if it is was running before the thread set it to 1, it would
      * start another thread for this device. */
-    cnt->running = 1;
+    cnt->running = TRUE;
 
     pthread_attr_init(&thread_attr);
     pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
 
     if (pthread_create(&cnt->thread_id, &thread_attr, &motion_loop, cnt)) {
         /* thread create failed, undo running state */
-        cnt->running = 0;
+        cnt->running = FALSE;
         pthread_mutex_lock(&global_lock);
         threads_running--;
         pthread_mutex_unlock(&global_lock);
@@ -3361,23 +3330,21 @@ static void motion_watchdog(int indx)
      * Best to just not get into a watchdog situation...
      */
 
-    if (!cnt_list[indx]->running) {
+    if (cnt_list[indx]->running == FALSE) {
         return;
     }
 
     cnt_list[indx]->watchdog--;
     if (cnt_list[indx]->watchdog == 0) {
         MOTION_LOG(ERR, TYPE_ALL, NO_ERRNO
-            ,_("Thread %d - Watchdog timeout. Trying to do a graceful restart")
-            , cnt_list[indx]->threadnr);
+            ,_("Watchdog timeout. Trying restart"));
         cnt_list[indx]->event_stop = TRUE; /* Trigger end of event */
-        cnt_list[indx]->finish = 1;
+        cnt_list[indx]->finish = TRUE;
     }
 
     if (cnt_list[indx]->watchdog == -cnt_list[indx]->conf.watchdog_kill) {
         MOTION_LOG(ERR, TYPE_ALL, NO_ERRNO
-            ,_("Thread %d - Watchdog timeout did NOT restart, killing it!")
-            , cnt_list[indx]->threadnr);
+            ,_("Watchdog did not restart. Calling pthread_cancel."));
         if ((cnt_list[indx]->camera_type == CAMERA_TYPE_RTSP) &&
             (cnt_list[indx]->rtsp != NULL)) {
             pthread_cancel(cnt_list[indx]->rtsp->thread_id);
@@ -3393,61 +3360,43 @@ static void motion_watchdog(int indx)
         pthread_cancel(cnt_list[indx]->thread_id);
     }
 
-    if (cnt_list[indx]->watchdog < -cnt_list[indx]->conf.watchdog_kill) {
-        if ((cnt_list[indx]->camera_type == CAMERA_TYPE_NETCAM) &&
-            (cnt_list[indx]->rtsp != NULL)) {
-            if (!cnt_list[indx]->rtsp->handler_finished &&
-                pthread_kill(cnt_list[indx]->rtsp->thread_id, 0) == ESRCH) {
-                cnt_list[indx]->rtsp->handler_finished = TRUE;
-                pthread_mutex_lock(&global_lock);
-                    threads_running--;
-                pthread_mutex_unlock(&global_lock);
-                netcam_rtsp_cleanup(cnt_list[indx],FALSE);
-            } else {
-                pthread_kill(cnt_list[indx]->rtsp->thread_id, SIGVTALRM);
-            }
-        }
-        if ((cnt_list[indx]->camera_type == CAMERA_TYPE_NETCAM) &&
-            (cnt_list[indx]->rtsp_high != NULL)) {
-            if (!cnt_list[indx]->rtsp_high->handler_finished &&
-                pthread_kill(cnt_list[indx]->rtsp_high->thread_id, 0) == ESRCH) {
-                cnt_list[indx]->rtsp_high->handler_finished = TRUE;
-                pthread_mutex_lock(&global_lock);
-                    threads_running--;
-                pthread_mutex_unlock(&global_lock);
-                netcam_rtsp_cleanup(cnt_list[indx],FALSE);
-            } else {
-                pthread_kill(cnt_list[indx]->rtsp_high->thread_id, SIGVTALRM);
-            }
-        }
-        if ((cnt_list[indx]->camera_type == CAMERA_TYPE_NETCAM) &&
-            (cnt_list[indx]->netcam != NULL)) {
-            if (!cnt_list[indx]->netcam->handler_finished &&
-                pthread_kill(cnt_list[indx]->netcam->thread_id, 0) == ESRCH) {
-                pthread_mutex_lock(&global_lock);
-                    threads_running--;
-                pthread_mutex_unlock(&global_lock);
-                cnt_list[indx]->netcam->handler_finished = TRUE;
-                cnt_list[indx]->netcam->finish = FALSE;
-            } else {
-                pthread_kill(cnt_list[indx]->netcam->thread_id, SIGVTALRM);
-            }
-        }
-        if (cnt_list[indx]->running &&
-            pthread_kill(cnt_list[indx]->thread_id, 0) == ESRCH) {
-            MOTION_LOG(DBG, TYPE_ALL, NO_ERRNO
-                ,_("Thread %d - Cleaning thread.")
-                , cnt_list[indx]->threadnr);
+    if (cnt_list[indx]->watchdog < -(cnt_list[indx]->conf.watchdog_kill*2)) {
+        MOTION_LOG(ERR, TYPE_ALL, NO_ERRNO, _("pthread_cancel failed.  Killing threads!!!"));
+        MOTION_LOG(ERR, TYPE_ALL, NO_ERRNO, _("Memory leaks will occur!!!"));
+        MOTION_LOG(ERR, TYPE_ALL, NO_ERRNO, _("Fix the cause of camera/system locking and restart Motion."));
+        if (cnt_list[indx]->rtsp != NULL) {
+            pthread_kill(cnt_list[indx]->rtsp->thread_id, SIGVTALRM);
+            cnt_list[indx]->rtsp->handler_finished = TRUE;
             pthread_mutex_lock(&global_lock);
                 threads_running--;
             pthread_mutex_unlock(&global_lock);
-            motion_cleanup(cnt_list[indx]);
-            cnt_list[indx]->running = 0;
-            cnt_list[indx]->finish = 0;
-        } else {
-            pthread_kill(cnt_list[indx]->thread_id,SIGVTALRM);
+            netcam_rtsp_cleanup(cnt_list[indx], FALSE);
         }
+        if (cnt_list[indx]->rtsp_high != NULL) {
+            pthread_kill(cnt_list[indx]->rtsp_high->thread_id, SIGVTALRM);
+            cnt_list[indx]->rtsp_high->handler_finished = TRUE;
+            pthread_mutex_lock(&global_lock);
+                threads_running--;
+            pthread_mutex_unlock(&global_lock);
+            netcam_rtsp_cleanup(cnt_list[indx],FALSE);
+        }
+        if (cnt_list[indx]->netcam != NULL) {
+            pthread_kill(cnt_list[indx]->netcam->thread_id, SIGVTALRM);
+            pthread_mutex_lock(&global_lock);
+                threads_running--;
+            pthread_mutex_unlock(&global_lock);
+            cnt_list[indx]->netcam->handler_finished = TRUE;
+            cnt_list[indx]->netcam->finish = FALSE;
+        }
+        pthread_kill(cnt_list[indx]->thread_id, SIGVTALRM);
+        pthread_mutex_lock(&global_lock);
+            threads_running--;
+        pthread_mutex_unlock(&global_lock);
+        motion_cleanup(cnt_list[indx]);
+        cnt_list[indx]->running = FALSE;
+        cnt_list[indx]->lost_connection = TRUE;
     }
+
 }
 
 static int motion_check_threadcount(void)
@@ -3551,7 +3500,8 @@ int main (int argc, char **argv)
 
             for (i = (cnt_list[1] != NULL ? 1 : 0); cnt_list[i]; i++) {
                 /* Check if threads wants to be restarted */
-                if ((!cnt_list[i]->running) && (cnt_list[i]->restart)) {
+                if ((cnt_list[i]->running == FALSE) &&
+                    (cnt_list[i]->restart == TRUE)) {
                     MOTION_LOG(NTC, TYPE_ALL, NO_ERRNO
                         ,_("Motion thread %d restart"), cnt_list[i]->threadnr);
                     motion_start_thread(cnt_list[i]);

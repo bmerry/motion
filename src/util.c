@@ -28,7 +28,24 @@
 
 #ifdef HAVE_FFMPEG
 
-
+/*********************************************/
+void my_frame_key(AVFrame *frame)
+{
+    #if (MYFFVER < 60016)
+        frame->key_frame = 1;
+    #else
+        frame->flags |= AV_FRAME_FLAG_KEY;
+    #endif
+}
+/*********************************************/
+void my_frame_interlaced(AVFrame *frame)
+{
+    #if (MYFFVER < 60016)
+        frame->key_frame = 0;
+    #else
+        frame->flags |= AV_FRAME_FLAG_INTERLACED;
+    #endif
+}
 /*********************************************/
 AVFrame *my_frame_alloc(void)
 {
@@ -212,8 +229,8 @@ void *myrealloc(void *ptr, size_t size, const char *desc)
     if (size == 0) {
         free(ptr);
         MOTION_LOG(WRN, TYPE_ALL, NO_ERRNO
-            ,_("Warning! Function %s tries to resize memoryblock at %p to 0 bytes!")
-            ,desc, ptr);
+            ,_("Warning! Function %s tries to resize memoryblock to 0 bytes!")
+            ,desc);
     } else {
         dummy = realloc(ptr, size);
         if (!dummy) {
@@ -538,13 +555,7 @@ size_t mystrftime(const struct context *cnt, char *s, size_t max, const char *us
                 sprintf(tempstr, "%*d", width, cnt->imgs.height);
                 break;
 
-            case 'f': // filename -- or %fps
-                if ((*(pos_userformat+1) == 'p') && (*(pos_userformat+2) == 's')) {
-                    sprintf(tempstr, "%*d", width, cnt->movie_fps);
-                    pos_userformat += 2;
-                    break;
-                }
-
+            case 'f': // filename
                 if (filename) {
                     snprintf(tempstr, PATH_MAX, "%*s", width, filename);
                 } else {

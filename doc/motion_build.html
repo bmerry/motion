@@ -67,8 +67,7 @@
       <button class="dropbtn">Distribution Specific Building</button>
       <div class="dropdown-content">
         <a href="#Preparation_For_Building"> Preparation For Building </a>
-        <a href="#BUILD_DEBIAN">Debian/Ubuntu/Raspbian</a>
-        <a href="#BUILD_OPENSUSE">Open SUSE</a>
+        <a href="#BUILD_DEBIAN">Debian/Ubuntu/Raspberry Pi OS</a>
         <a href="#BUILD_FREEBSD">Free BSD</a>
         <a href="#BUILD_CENTOS">CentOS</a>
         <a href="#BUILD_MACOSX">MacOSX </a>
@@ -100,7 +99,7 @@
     <h3><a name="Install_Apt"></a> Installing with apt </h3>
     <ul>
       <p></p>
-      Motion is part of the Debian, Ubuntu and Raspbian repositories and can be installed with the apt tool.  The
+      Motion is part of the Debian, Ubuntu and Raspberry Pi OS repositories and can be installed with the apt tool.  The
       version included with apt will be the version that was available when the distribution version
       was initially deployed and therefore may not represent the latest release.
       <p></p>
@@ -179,11 +178,11 @@
       script.  If errors occur during the process or you wish to customize the build, please
       review the extended building instructions further below.
       <p></p>
-      Debian / Ubuntu / Raspbian Packages
+      Debian / Ubuntu / Raspberry Pi OS Packages
       <ul>
           <code><strong>sudo apt-get install autoconf automake autopoint build-essential pkgconf libtool libzip-dev
           libjpeg-dev git libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libavdevice-dev
-          libwebp-dev gettext libmicrohttpd-dev</strong></code>
+          libwebp-dev gettext libmicrohttpd-dev libcamera-tools libcamera-dev libcamera-v4l2</strong></code>
           <p></p>
           <code><strong>cd ~</strong></code>
           <br /><code><strong>git clone https://github.com/Motion-Project/motion.git</strong></code>
@@ -247,13 +246,13 @@
       <p></p>
       <p></p>
 
-      <h4><a name="BUILD_DEBIAN"></a>Debian/Ubuntu/Raspbian</a> </h4>
+      <h4><a name="BUILD_DEBIAN"></a>Debian/Ubuntu/Raspberry Pi OS</a> </h4>
       <ul>
         <li>Required</li>
         <ul>
           <p></p>
-          <code><strong>sudo apt-get install autoconf automake autopoint build-essential pkgconf
-          libtool git libzip-dev libjpeg62-turbo-dev gettext libmicrohttpd-dev</strong></code>
+          <code><strong>sudo apt-get install autoconf automake autopoint build-essential pkgconf libtool libzip-dev
+          libjpeg-dev git gettext libmicrohttpd-dev </strong></code>
           <p></p>
         </ul>
         <p></p>
@@ -293,10 +292,10 @@
             <code><strong>sudo apt-get install libsqlite3-dev</strong></code>
             <p></p>
           </ul>
-          <li>JPEG Turbo</li>
+          <li>libcamera</li>
           <ul>
             <p></p>
-            <code><strong>sudo apt-get install libjpeg-turbo8 libjpeg-turbo8-dev</strong></code>
+            <code><strong>sudo apt-get install libcamera-tools libcamera-dev libcamera-v4l2</strong></code>
             <p></p>
           </ul>
           <li>Webp Image Support</li>
@@ -307,72 +306,6 @@
           </ul>
 
         </ul>
-      </ul>
-      <p></p>
-      <p></p>
-
-      <h4><a name="BUILD_OPENSUSE"></a>openSUSE</a> </h4>
-      <ul>
-        <li>Required</li>
-        <ul>
-          <p></p>
-          <code><strong>sudo zypper install autoconf automake autopoint libtool git </strong></code>
-          <p></p>
-          <code><strong>sudo zypper install --type pattern devel_basis </strong></code>
-          <p></p>
-          <code><strong>sudo zypper install libjpeg8-devel gettext libmicrohttpd </strong></code>
-          <p></p>
-          <code><strong>sudo zypper install -t pattern devel_C_C++ </strong></code>
-          <p></p>
-        </ul>
-        <p></p>
-        <li>Optional Packages</li>
-        <ul>
-          <li>FFMpeg Functionality(Required for creating movies, using network cameras, etc.  SEE NOTE BELOW!)</li>
-          <ul>
-            <p></p>
-            <code><strong>sudo zypper ar -f -n packman-essentials http://packman.inode.at/suse/openSUSE_13.1/Essentials/ packman-essentials</strong></code>
-            <p></p>
-            <code><strong>sudo zypper ar -f -n packman-multimedia http://packman.inode.at/suse/openSUSE_13.1/Multimedia/ packman-multimedia</strong></code>
-            <p></p>
-            <code><strong>sudo zypper install libffmpeg-devel</strong></code>
-            <p></p>
-          </ul>
-          <li>MySQL database functionality</li>
-          <ul>
-            <p></p>
-            <code><strong>Not known by author</strong></code>
-            <p></p>
-          </ul>
-          <li>MariaDB database functionality</li>
-          <ul>
-            <p></p>
-            <code><strong>Not known by author</strong></code>
-            <p></p>
-          </ul>
-          <li>PostgreSQL database functionality</li>
-          <ul>
-            <p></p>
-            <code><strong>Not known by author</strong></code>
-            <p></p>
-          </ul>
-          <li>SQLite3 database functionality</li>
-          <ul>
-            <p></p>
-            <code><strong>Not known by author</strong></code>
-            <p></p>
-          </ul>
-          <li>Webp Image Support</li>
-          <ul>
-            <p></p>
-            <code><strong>sudo zypper install libwebp-devel </strong></code>
-            <p></p>
-          </ul>
-        </ul>
-        Important ffmpeg note:  The ffmpeg libraries indicated above are provided by a external repository.  This may
-        change in the future.  Validate that the repository is still valid when doing the install on openSUSE systems.
-        The default for the configure is to require that ffmpeg is installed.  Use the configure option to
-        compile without the ffmpeg functionality.
       </ul>
       <p></p>
       <p></p>

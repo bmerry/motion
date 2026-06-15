@@ -126,11 +126,7 @@ static void v4l2_palette_init(palette_item *palette_array)
 
 }
 
-#if defined (BSD)
 static int xioctl(src_v4l2_t *vid_source, unsigned long request, void *arg)
-#else
-static int xioctl(src_v4l2_t *vid_source, int request, void *arg)
-#endif
 {
     int ret;
 
@@ -1305,7 +1301,7 @@ static int v4l2_device_init(struct context *cnt, struct video_dev *curdev)
     src_v4l2_t *vid_source;
 
     /* Allocate memory for the state structure. */
-    if (!(vid_source = calloc(sizeof(src_v4l2_t), 1))) {
+    if (!(vid_source = calloc(1, sizeof(src_v4l2_t)))) {
         MOTION_LOG(ERR, TYPE_VIDEO, SHOW_ERRNO, _("Out of memory."));
         vid_source = NULL;
         return -1;
@@ -1564,14 +1560,13 @@ static int v4l2_fps_set(struct context *cnt, struct video_dev *curdev)
 
     retcd = xioctl(vid_source, VIDIOC_S_PARM, &setfps);
     if (retcd != 0) {
-        MOTION_LOG(ERR, TYPE_VIDEO, NO_ERRNO
-            ,_("Error setting fps. Return code %d"), retcd);
+        MOTION_LOG(NTC, TYPE_VIDEO, NO_ERRNO
+            ,_("Could not set the fps on the device."));
+    } else {
+        MOTION_LOG(INF, TYPE_VIDEO, NO_ERRNO
+            , _("Device set fps to %d")
+            , setfps.parm.capture.timeperframe.denominator);
     }
-
-    MOTION_LOG(INF, TYPE_VIDEO, NO_ERRNO
-        , _("Device set fps to %d")
-        , setfps.parm.capture.timeperframe.denominator);
-
     return 0;
 }
 
@@ -1841,7 +1836,7 @@ int v4l2_palette_valid(char *video_device, int v4l2_palette)
 
         v4l2_palette_init(palette_array);
 
-        vid_source = calloc(sizeof(src_v4l2_t), 1);
+        vid_source = calloc(1, sizeof(src_v4l2_t));
         vid_source->fd_device = open(video_device, O_RDWR|O_CLOEXEC);
         if (vid_source->fd_device < 0) {
             MOTION_LOG(ALR, TYPE_VIDEO, SHOW_ERRNO
@@ -1930,7 +1925,7 @@ int v4l2_parms_valid(char *video_device, int v4l2_palette, int v4l2_fps, int v4l
 
         v4l2_palette_init(palette_array);
 
-        vid_source = calloc(sizeof(src_v4l2_t), 1);
+        vid_source = calloc(1, sizeof(src_v4l2_t));
         vid_source->fd_device = open(video_device, O_RDWR|O_CLOEXEC);
         if (vid_source->fd_device < 0) {
             MOTION_LOG(ALR, TYPE_VIDEO, SHOW_ERRNO
